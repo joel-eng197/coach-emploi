@@ -162,10 +162,10 @@ fun CvScreen(ui: UiState, vm: CoachViewModel, f: Form, onForm: (Form) -> Unit) {
         ui.cv?.let { r ->
             Titre("Mon CV")
             CvDocument(r)
-            OutlinedButton({ share(ctx, r.cvText()) }) { Text("Partager le CV") }
+            ExportButtons({ PdfExport.exportCv(ctx, r, false) }, { PdfExport.exportCv(ctx, r, true) }) { share(ctx, r.cvText()) }
             Titre("Ma lettre de motivation")
             LettreDocument(r)
-            OutlinedButton({ share(ctx, r.lettreText()) }) { Text("Partager la lettre") }
+            ExportButtons({ PdfExport.exportLettre(ctx, r, false) }, { PdfExport.exportLettre(ctx, r, true) }) { share(ctx, r.lettreText()) }
         }
     }
 }
@@ -310,4 +310,13 @@ fun Champ(
         value, onChange, Modifier.fillMaxWidth(), label = { Text(label) },
         keyboardOptions = KeyboardOptions(keyboardType = keyboard), minLines = minLines
     )
+}
+
+@Composable
+fun ExportButtons(onPdfShare: () -> Unit, onPdfSave: () -> Unit, onText: () -> Unit) {
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Button(onPdfShare) { Text("Partager en PDF") }
+        OutlinedButton(onPdfSave) { Text("Télécharger") }
+    }
+    TextButton(onText) { Text("Partager en texte") }
 }
