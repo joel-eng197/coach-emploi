@@ -1,0 +1,8 @@
+[
+ {"titre": "freeCodeCamp - Développement web", "domaine": "numérique", "gratuit": true},
+ {"titre": "OpenClassrooms - parcours métiers du numérique", "domaine": "numérique", "gratuit": true},
+ {"titre": "Coursera - Compétences professionnelles (aide financière possible)", "domaine": "général", "gratuit": false},
+ {"titre": "Khan Academy - Maths et bases de gestion", "domaine": "général", "gratuit": true},
+ {"titre": "Formation entrepreneuriat jeunes MINJEC (A COMPLETER avec les offres réelles)", "domaine": "entrepreneuriat", "gratuit": true},
+ {"titre": "FNE - offres de formation et d'insertion (A COMPLETER avec les offres réelles)", "domaine": "emploi", "gratuit": true}
+]
