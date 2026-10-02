@@ -182,7 +182,7 @@ fun HistoryScreen(items: List<Saved>, vm: CoachViewModel) {
     }
     LazyColumn(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         items(items, key = { it.id }) { s ->
-            Card(Modifier.fillMaxWidth(), onClick = { open = if (open == s.id) null else s.id }) {
+            Card(onClick = { open = if (open == s.id) null else s.id }, modifier = Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text(s.title, style = MaterialTheme.typography.titleMedium)
                     Text(fmt.format(Date(s.createdAt)), style = MaterialTheme.typography.bodySmall)
