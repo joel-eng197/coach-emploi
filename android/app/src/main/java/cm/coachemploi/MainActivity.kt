@@ -1,4 +1,5 @@
 @file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+
 package cm.coachemploi
 
 import android.content.Context
@@ -6,6 +7,7 @@ import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -16,7 +18,9 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import java.text.SimpleDateFormat
@@ -26,17 +30,18 @@ import java.util.Locale
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContent { MaterialTheme { App() } }
+        setContent { CoachTheme { App() } }
     }
 }
 
-/** Formulaire partagé entre les onglets CV, Diagnostic et Entretien. */
-data class Form(
-    val nom: String = "", val formation: String = "", val competences: String = "",
-    val experience: String = "", val ville: String = "", val metier: String = "", val en: Boolean = false
-) {
-    val langue get() = if (en) "en" else "fr"
-    fun toProfil() = Profil(nom, formation, competences, experience, ville, metier, langue)
+@Composable
+fun CoachTheme(content: @Composable () -> Unit) {
+    val scheme = if (isSystemInDarkTheme()) darkColorScheme(primary = Color(0xFF6FD3A8), onPrimary = Color(0xFF00382A))
+    else lightColorScheme(
+        primary = Color(0xFF0B6E4F), onPrimary = Color.White,
+        primaryContainer = Color(0xFFD2F0E2), onPrimaryContainer = Color(0xFF002114)
+    )
+    MaterialTheme(colorScheme = scheme, content = content)
 }
 
 fun share(ctx: Context, text: String) {
@@ -45,14 +50,31 @@ fun share(ctx: Context, text: String) {
 }
 
 @Composable
+fun Header(demo: Boolean) {
+    Surface(color = MaterialTheme.colorScheme.primary, modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+            Text(
+                "Coach Emploi IA", style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimary
+            )
+            Text(
+                if (demo) "Mode démo : exemples sans IA" else "Ton CV, ton diagnostic, ton entretien",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onPrimary
+            )
+        }
+    }
+}
+
+@Composable
 fun App(vm: CoachViewModel = viewModel()) {
     var tab by remember { mutableIntStateOf(0) }
-    var form by remember { mutableStateOf(Form()) }
     val ui by vm.ui.collectAsState()
     val history by vm.history.collectAsState()
-    val tabs = listOf("CV & Lettre", "Diagnostic", "Entretien", "Historique")
+    val demo by vm.demo.collectAsState()
+    val tabs = listOf("CV & Lettre", "Diagnostic", "Entretien", "Historique", "Réglages")
     Scaffold { pad ->
         Column(Modifier.padding(pad).fillMaxSize()) {
+            Header(demo)
             ScrollableTabRow(selectedTabIndex = tab, edgePadding = 0.dp) {
                 tabs.forEachIndexed { i, t -> Tab(tab == i, { tab = i }, text = { Text(t) }) }
             }
@@ -60,10 +82,11 @@ fun App(vm: CoachViewModel = viewModel()) {
             ui.error?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(12.dp)) }
             ui.notice?.let { Text(it, color = MaterialTheme.colorScheme.tertiary, modifier = Modifier.padding(12.dp)) }
             when (tab) {
-                0 -> CvScreen(ui, vm, form) { form = it }
-                1 -> DiagScreen(ui, vm, form)
-                2 -> InterviewScreen(ui, vm, form)
-                else -> HistoryScreen(history, vm)
+                0 -> CvScreen(ui, vm, vm.form) { vm.updateForm(it) }
+                1 -> DiagScreen(ui, vm, vm.form)
+                2 -> InterviewScreen(ui, vm, vm.form)
+                3 -> HistoryScreen(history, vm)
+                else -> SettingsScreen(vm)
             }
         }
     }
@@ -108,8 +131,10 @@ fun DiagScreen(ui: UiState, vm: CoachViewModel, f: Form) {
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         Text("Compare ton profil au métier visé et te propose un plan de 30 jours.")
-        if (f.metier.isBlank()) Text("Remplis d'abord ton profil dans l'onglet « CV & Lettre ».",
-            color = MaterialTheme.colorScheme.error)
+        if (f.metier.isBlank()) Text(
+            "Remplis d'abord ton profil dans l'onglet « CV & Lettre ».",
+            color = MaterialTheme.colorScheme.error
+        )
         Button(
             onClick = { vm.diagnose(f.toProfil()) },
             enabled = !ui.loading && f.metier.isNotBlank(), modifier = Modifier.fillMaxWidth()
@@ -176,8 +201,10 @@ fun HistoryScreen(items: List<Saved>, vm: CoachViewModel) {
     val fmt = remember { SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.FRANCE) }
     var open by remember { mutableStateOf<Long?>(null) }
     if (items.isEmpty()) {
-        Text("Rien d'enregistré pour l'instant. Tes CV et diagnostics apparaîtront ici, même hors ligne.",
-            Modifier.padding(16.dp))
+        Text(
+            "Rien d'enregistré pour l'instant. Tes CV et diagnostics apparaîtront ici, même hors ligne.",
+            Modifier.padding(16.dp)
+        )
         return
     }
     LazyColumn(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -197,6 +224,32 @@ fun HistoryScreen(items: List<Saved>, vm: CoachViewModel) {
                 }
             }
         }
+    }
+}
+
+@Composable
+fun SettingsScreen(vm: CoachViewModel) {
+    val demo by vm.demo.collectAsState()
+    var url by remember { mutableStateOf(vm.serverUrl) }
+    Column(
+        Modifier.verticalScroll(rememberScrollState()).padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        Text("Serveur", style = MaterialTheme.typography.titleMedium)
+        Text("Colle ici l'adresse de ton serveur, par exemple coach-emploi.onrender.com. Pas besoin de recompiler l'appli.")
+        Champ("Adresse du serveur", url) { url = it }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button({ vm.saveUrl(url) }) { Text("Enregistrer") }
+            OutlinedButton({ vm.saveUrl(url); vm.testConnection() }) { Text("Tester") }
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Mode démo (sans serveur ni IA)", Modifier.weight(1f))
+            Switch(demo, { vm.setDemo(it) })
+        }
+        Text(
+            "En mode démo, l'appli répond avec des exemples locaux : pratique pour tester ou présenter sans connexion.",
+            style = MaterialTheme.typography.bodySmall
+        )
     }
 }
 

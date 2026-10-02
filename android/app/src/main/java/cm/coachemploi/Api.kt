@@ -4,6 +4,8 @@ import okhttp3.OkHttpClient
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
 import retrofit2.http.Body
+import retrofit2.http.GET
+import okhttp3.ResponseBody
 import retrofit2.http.POST
 import java.util.concurrent.TimeUnit
 
@@ -35,6 +37,7 @@ fun SkillsResponse.toText(): String = buildString {
 }
 
 interface CoachApi {
+    @GET("health") suspend fun health(): ResponseBody
     @POST("cv") suspend fun cv(@Body r: CvRequest): CvResponse
     @POST("skills-gap") suspend fun skills(@Body r: CvRequest): SkillsResponse
     @POST("interview") suspend fun interview(@Body r: InterviewRequest): InterviewResponse
@@ -43,8 +46,18 @@ interface CoachApi {
 object Net {
     private val http = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS).readTimeout(60, TimeUnit.SECONDS).build()
-    val api: CoachApi by lazy {
-        Retrofit.Builder().baseUrl(BuildConfig.BASE_URL).client(http)
+    private var cachedUrl = ""
+    private var cachedApi: CoachApi? = null
+
+    /** Client Retrofit pour l'adresse choisie dans les réglages (recréé si elle change). */
+    @Synchronized
+    fun api(baseUrl: String): CoachApi {
+        val existing = cachedApi
+        if (existing != null && cachedUrl == baseUrl) return existing
+        val created = Retrofit.Builder().baseUrl(baseUrl).client(http)
             .addConverterFactory(GsonConverterFactory.create()).build().create(CoachApi::class.java)
+        cachedApi = created
+        cachedUrl = baseUrl
+        return created
     }
 }
