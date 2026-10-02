@@ -10,11 +10,29 @@ la personne fournit. Tu écris dans la langue demandée (fr ou en), en phrases c
 
 CV_SYSTEM = BASE + """
 
-TÂCHE : produire un CV et une lettre de motivation prêts à l'emploi.
-Réponds UNIQUEMENT avec un objet JSON valide, sans texte autour ni balises markdown :
-{"cv": "<CV en texte brut avec sections : Profil, Compétences, Expérience, Formation, Langues>",
- "lettre": "<lettre de motivation de 150 à 200 mots adressée au recruteur, pour le métier visé>"}
-Règles : verbes d'action, résultats chiffrés seulement si fournis, ton professionnel mais simple.
+TÂCHE : produire un CV et une lettre de motivation structurés, prêts à être mis en page.
+Réponds UNIQUEMENT avec un objet JSON valide, sans texte autour ni balises markdown, de cette forme exacte :
+{"cv": {"nom": "", "titre": "", "contact": [""], "resume": "", "competences": [""],
+        "experiences": [{"poste": "", "organisation": "", "periode": "", "details": [""]}],
+        "formations": [{"diplome": "", "etablissement": "", "periode": ""}],
+        "certifications": [""], "langues": [""], "interets": [""]},
+ "lettre": {"objet": "", "destinataire": "Madame, Monsieur,", "paragraphes": ["", "", ""],
+            "politesse": "", "signature": ""}}
+Règles :
+- Tous les champs sauf le nom sont facultatifs. Si une information n'est pas fournie, laisse la chaîne vide
+  ou la liste vide : la section sera simplement ignorée. N'invente JAMAIS de diplôme, employeur, date,
+  chiffre ou compétence.
+- "contact" : les coordonnées fournies (téléphone, email, adresse ou ville, lien), un élément chacune.
+- "titre" : le métier visé, sinon le poste le plus proche du profil, sinon vide.
+- "resume" : si un résumé est fourni, reformule-le en 2 à 3 phrases professionnelles ; sinon rédige-en un
+  court uniquement avec les éléments fournis ; vide s'il y a trop peu d'informations.
+- Découpe compétences, langues (avec leur niveau), centres d'intérêt et certifications en éléments courts.
+- "experiences" et "formations" : une entrée par expérience ou diplôme cité. "details" : puces courtes qui
+  commencent par un verbe d'action, sans résultat chiffré inventé.
+- Lettre : objet clair, 3 paragraphes de 2 à 4 phrases (accroche, atouts, conclusion avec disponibilité),
+  adaptée au métier visé et au type de contrat recherché. Sans métier visé, rédige une candidature
+  spontanée. Pas de date ni d'adresse dans la lettre : l'application les ajoute.
+- "politesse" : formule de politesse complète ; "signature" : le nom du candidat.
 Les retours à la ligne s'écrivent \\n dans le JSON."""
 
 SKILLS_SYSTEM = BASE + """

@@ -61,20 +61,26 @@ class CoachViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    private fun parseCv(json: String): CvResponse? =
+        try { gson.fromJson(json, CvResponse::class.java) } catch (e: Exception) { null }
+
     fun generateCv(p: Profil) = viewModelScope.launch {
         _ui.update { it.copy(loading = true, error = null, notice = null) }
         val isDemo = settings.demo
         try {
-            val r = if (isDemo) Demo.cv(p) else Net.api(settings.serverUrl).cv(CvRequest(p))
-            val titre = (if (isDemo) "Démo · " else "") + "CV : ${p.metier_vise}"
+            val raw = if (isDemo) Demo.cv(p) else Net.api(settings.serverUrl).cv(CvRequest(p))
+            // La date du jour est ajoutée automatiquement par l'appli
+            val r = raw.copy(date = today(p.langue), lieu = p.ville.ifBlank { p.adresse }, langue = p.langue)
+            val titre = (if (isDemo) "Démo · " else "") + "CV : " + p.metier_vise.ifBlank { p.nom }
             dao.insert(Saved(type = "cv", title = titre, json = gson.toJson(r)))
             _ui.update { it.copy(loading = false, cv = r) }
         } catch (e: Exception) {
-            val last = dao.last("cv")
-            if (last != null) _ui.update {
-                it.copy(loading = false, cv = gson.fromJson(last.json, CvResponse::class.java),
-                    notice = "Hors ligne : dernier CV enregistré affiché.")
-            } else _ui.update { it.copy(loading = false, error = erreur) }
+            val last = dao.last("cv")?.let { parseCv(it.json) }
+            if (last != null) {
+                _ui.update { it.copy(loading = false, cv = last, notice = "Hors ligne : dernier CV enregistré affiché.") }
+            } else {
+                _ui.update { it.copy(loading = false, error = erreur) }
+            }
         }
     }
 
@@ -88,10 +94,14 @@ class CoachViewModel(app: Application) : AndroidViewModel(app) {
             _ui.update { it.copy(loading = false, diag = r) }
         } catch (e: Exception) {
             val last = dao.last("diag")
-            if (last != null) _ui.update {
-                it.copy(loading = false, diag = gson.fromJson(last.json, SkillsResponse::class.java),
-                    notice = "Hors ligne : dernier diagnostic enregistré affiché.")
-            } else _ui.update { it.copy(loading = false, error = erreur) }
+            if (last != null) {
+                _ui.update {
+                    it.copy(loading = false, diag = gson.fromJson(last.json, SkillsResponse::class.java),
+                        notice = "Hors ligne : dernier diagnostic enregistré affiché.")
+                }
+            } else {
+                _ui.update { it.copy(loading = false, error = erreur) }
+            }
         }
     }
 
@@ -111,7 +121,8 @@ class CoachViewModel(app: Application) : AndroidViewModel(app) {
     fun delete(s: Saved) = viewModelScope.launch { dao.delete(s) }
 
     fun readable(s: Saved): String = when (s.type) {
-        "cv" -> gson.fromJson(s.json, CvResponse::class.java).let { "${it.cv}\n\n--- Lettre ---\n${it.lettre}" }
+        "cv" -> parseCv(s.json)?.let { it.cvText() + "\n\n----------\n\n" + it.lettreText() }
+            ?: "Ancien format : régénère ton CV."
         else -> gson.fromJson(s.json, SkillsResponse::class.java).toText()
     }
 }

@@ -10,12 +10,36 @@ import retrofit2.http.POST
 import java.util.concurrent.TimeUnit
 
 data class Profil(
-    val nom: String, val formation: String, val competences: String,
-    val experience: String, val ville: String, val metier_vise: String, val langue: String = "fr"
+    val nom: String = "", val formation: String = "", val competences: String = "",
+    val experience: String = "", val ville: String = "", val metier_vise: String = "",
+    val langue: String = "fr",
+    val telephone: String = "", val email: String = "", val adresse: String = "", val lien: String = "",
+    val resume: String = "", val langues_parlees: String = "", val interets: String = "",
+    val certifications: String = "", val contrat: String = ""
 )
 data class CvRequest(val profil: Profil)
 // Valeurs par défaut : Gson tolère ainsi un champ manquant dans la réponse de l'IA
-data class CvResponse(val cv: String = "", val lettre: String = "")
+data class Experience(
+    val poste: String = "", val organisation: String = "", val periode: String = "",
+    val details: List<String> = emptyList()
+)
+data class Etude(val diplome: String = "", val etablissement: String = "", val periode: String = "")
+data class CvDoc(
+    val nom: String = "", val titre: String = "", val contact: List<String> = emptyList(),
+    val resume: String = "", val competences: List<String> = emptyList(),
+    val experiences: List<Experience> = emptyList(), val formations: List<Etude> = emptyList(),
+    val certifications: List<String> = emptyList(), val langues: List<String> = emptyList(),
+    val interets: List<String> = emptyList()
+)
+data class LettreDoc(
+    val objet: String = "", val destinataire: String = "Madame, Monsieur,",
+    val paragraphes: List<String> = emptyList(), val politesse: String = "", val signature: String = ""
+)
+/** Réponse complète : date, lieu et langue sont ajoutés par l'appli au moment de la génération. */
+data class CvResponse(
+    val cv: CvDoc = CvDoc(), val lettre: LettreDoc = LettreDoc(),
+    val date: String = "", val lieu: String = "", val langue: String = "fr"
+)
 data class Formation(val titre: String = "", val pourquoi: String = "")
 data class SkillsResponse(
     val score: Int = 0,

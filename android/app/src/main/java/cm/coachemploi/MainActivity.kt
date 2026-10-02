@@ -9,10 +9,12 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
@@ -23,6 +25,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import java.text.SimpleDateFormat
@@ -99,32 +102,70 @@ fun App(vm: CoachViewModel = viewModel()) {
 }
 
 @Composable
+fun Titre(texte: String) =
+    Text(texte, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+
+@Composable
 fun CvScreen(ui: UiState, vm: CoachViewModel, f: Form, onForm: (Form) -> Unit) {
     val ctx = LocalContext.current
+    val contrats = listOf("CDI", "CDD", "Stage", "Alternance", "Freelance", "Temps partiel")
     Column(
         Modifier.verticalScroll(rememberScrollState()).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        Champ("Nom complet", f.nom) { onForm(f.copy(nom = it)) }
-        Champ("Formation / diplômes", f.formation) { onForm(f.copy(formation = it)) }
-        Champ("Compétences", f.competences) { onForm(f.copy(competences = it)) }
-        Champ("Expériences (stages, jobs, projets)", f.experience) { onForm(f.copy(experience = it)) }
+        Text(
+            "Seul le nom est obligatoire. Les rubriques laissées vides sont simplement ignorées dans ton CV.",
+            style = MaterialTheme.typography.bodySmall
+        )
+        Titre("Identité et contact")
+        Champ("Nom complet (obligatoire)", f.nom) { onForm(f.copy(nom = it)) }
+        Champ("Téléphone", f.telephone, KeyboardType.Phone) { onForm(f.copy(telephone = it)) }
+        Champ("Email", f.email, KeyboardType.Email) { onForm(f.copy(email = it)) }
+        Champ("Adresse / Pays", f.adresse) { onForm(f.copy(adresse = it)) }
         Champ("Ville", f.ville) { onForm(f.copy(ville = it)) }
+        Champ("LinkedIn ou portfolio (lien)", f.lien, KeyboardType.Uri) { onForm(f.copy(lien = it)) }
+
+        Titre("Profil")
+        Champ("Résumé professionnel (courte accroche)", f.resume, minLines = 3) { onForm(f.copy(resume = it)) }
+
+        Titre("Parcours")
+        Champ("Formation / diplômes", f.formation, minLines = 2) { onForm(f.copy(formation = it)) }
+        Champ("Expériences (stages, jobs, projets), une par ligne", f.experience, minLines = 3) { onForm(f.copy(experience = it)) }
+        Champ("Certifications et formations complémentaires", f.certifications, minLines = 2) { onForm(f.copy(certifications = it)) }
+
+        Titre("Compétences, langues et loisirs")
+        Champ("Compétences (séparées par des virgules)", f.competences, minLines = 2) { onForm(f.copy(competences = it)) }
+        Champ("Langues parlées (ex : Français courant, Anglais B2)", f.langues) { onForm(f.copy(langues = it)) }
+        Champ("Centres d'intérêt / loisirs", f.interets) { onForm(f.copy(interets = it)) }
+
+        Titre("Objectif")
         Champ("Métier visé", f.metier) { onForm(f.copy(metier = it)) }
+        Text("Type de contrat recherché", style = MaterialTheme.typography.bodyMedium)
+        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            contrats.forEach { c ->
+                FilterChip(
+                    selected = f.contrat == c,
+                    onClick = { onForm(f.copy(contrat = if (f.contrat == c) "" else c)) },
+                    label = { Text(c) }
+                )
+            }
+        }
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("Générer en anglais"); Spacer(Modifier.width(8.dp))
             Switch(f.en, { onForm(f.copy(en = it)) })
         }
         Button(
             onClick = { vm.generateCv(f.toProfil()) },
-            enabled = !ui.loading && f.metier.isNotBlank(), modifier = Modifier.fillMaxWidth()
+            enabled = !ui.loading && f.nom.isNotBlank(), modifier = Modifier.fillMaxWidth()
         ) { Text("Générer mon CV et ma lettre") }
-        ui.cv?.let { cv ->
-            Text("Mon CV", style = MaterialTheme.typography.titleMedium)
-            SelectionContainer { Text(cv.cv) }
-            Text("Ma lettre de motivation", style = MaterialTheme.typography.titleMedium)
-            SelectionContainer { Text(cv.lettre) }
-            OutlinedButton({ share(ctx, "${cv.cv}\n\n${cv.lettre}") }) { Text("Partager") }
+
+        ui.cv?.let { r ->
+            Titre("Mon CV")
+            CvDocument(r)
+            OutlinedButton({ share(ctx, r.cvText()) }) { Text("Partager le CV") }
+            Titre("Ma lettre de motivation")
+            LettreDocument(r)
+            OutlinedButton({ share(ctx, r.lettreText()) }) { Text("Partager la lettre") }
         }
     }
 }
@@ -260,5 +301,13 @@ fun SettingsScreen(vm: CoachViewModel) {
 }
 
 @Composable
-fun Champ(label: String, value: String, onChange: (String) -> Unit) =
-    OutlinedTextField(value, onChange, Modifier.fillMaxWidth(), label = { Text(label) })
+fun Champ(
+    label: String, value: String,
+    keyboard: KeyboardType = KeyboardType.Text, minLines: Int = 1,
+    onChange: (String) -> Unit
+) {
+    OutlinedTextField(
+        value, onChange, Modifier.fillMaxWidth(), label = { Text(label) },
+        keyboardOptions = KeyboardOptions(keyboardType = keyboard), minLines = minLines
+    )
+}

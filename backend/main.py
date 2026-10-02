@@ -38,7 +38,7 @@ def ask(system: str, messages: list, max_tokens: int = 1500) -> str:
 
 
 def ask_json(system: str, user: str) -> dict:
-    txt = ask(system, [{"role": "user", "content": user}], 2000).strip()
+    txt = ask(system, [{"role": "user", "content": user}], 3500).strip()
     txt = txt.removeprefix("```json").removeprefix("```").removesuffix("```").strip()
     try:
         return json.loads(txt)
@@ -54,6 +54,54 @@ class Profil(BaseModel):
     ville: str = ""
     metier_vise: str = ""
     langue: str = "fr"
+    telephone: str = ""
+    email: str = ""
+    adresse: str = ""
+    lien: str = ""
+    resume: str = ""
+    langues_parlees: str = ""
+    interets: str = ""
+    certifications: str = ""
+    contrat: str = ""
+
+
+class Experience(BaseModel):
+    poste: str = ""
+    organisation: str = ""
+    periode: str = ""
+    details: list[str] = []
+
+
+class Etude(BaseModel):
+    diplome: str = ""
+    etablissement: str = ""
+    periode: str = ""
+
+
+class CvDoc(BaseModel):
+    nom: str = ""
+    titre: str = ""
+    contact: list[str] = []
+    resume: str = ""
+    competences: list[str] = []
+    experiences: list[Experience] = []
+    formations: list[Etude] = []
+    certifications: list[str] = []
+    langues: list[str] = []
+    interets: list[str] = []
+
+
+class LettreDoc(BaseModel):
+    objet: str = ""
+    destinataire: str = "Madame, Monsieur,"
+    paragraphes: list[str] = []
+    politesse: str = ""
+    signature: str = ""
+
+
+class CvOut(BaseModel):
+    cv: CvDoc = CvDoc()
+    lettre: LettreDoc = LettreDoc()
 
 
 class CvRequest(BaseModel):
@@ -79,7 +127,11 @@ def health():
 @app.post("/cv")
 def cv(req: CvRequest, request: Request):
     limiter(request)
-    return ask_json(CV_SYSTEM, f"Langue : {req.profil.langue}\nProfil : {req.profil.model_dump_json()}")
+    data = ask_json(CV_SYSTEM, f"Langue : {req.profil.langue}\nProfil : {req.profil.model_dump_json()}")
+    try:
+        return CvOut(**data).model_dump()
+    except Exception:
+        raise HTTPException(502, "Réponse IA invalide, réessayez.")
 
 
 @app.post("/skills-gap")

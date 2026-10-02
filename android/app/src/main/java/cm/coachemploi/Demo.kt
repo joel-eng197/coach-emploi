@@ -15,18 +15,62 @@ object Demo {
 
     suspend fun cv(p: Profil): CvResponse {
         delay(900)
-        val nom = p.nom.ifBlank { "Candidat(e)" }
-        val ville = p.ville.ifBlank { "Cameroun" }
-        val a = "À compléter"
+        val en = p.langue == "en"
+        fun items(s: String) = s.split(",", ";", "\n").map { it.trim() }.filter { it.isNotEmpty() }
+        fun lines(s: String) = s.split("\n").map { it.trim() }.filter { it.isNotEmpty() }
+        val nom = p.nom.trim()
+        val poste = p.metier_vise.trim()
+        val contrat = p.contrat.trim()
+        val comp = items(p.competences)
+        val contact = listOf(p.telephone, p.email, p.adresse.ifBlank { p.ville }, p.lien)
+            .map { it.trim() }.filter { it.isNotEmpty() }
+        val resume = when {
+            p.resume.isNotBlank() -> p.resume.trim()
+            poste.isNotEmpty() && en -> "Motivated candidate seeking a $poste position."
+            poste.isNotEmpty() -> "Candidat(e) motivé(e) visant un poste de $poste."
+            else -> ""
+        }
+        val intro = when {
+            en && poste.isNotEmpty() -> "I am writing to apply for the position of $poste."
+            en -> "I am writing to submit my spontaneous application."
+            poste.isNotEmpty() -> "Je me permets de vous adresser ma candidature pour le poste de $poste."
+            else -> "Je me permets de vous adresser ma candidature spontanée."
+        }
+        val contratPhrase = when {
+            contrat.isEmpty() -> ""
+            en -> " I am looking for a $contrat position."
+            else -> " Je recherche un contrat de type $contrat."
+        }
+        val atouts = comp.take(3).joinToString(", ")
+        val p2 = when {
+            en && atouts.isNotEmpty() -> "My background has taught me rigor, teamwork and a sense of service, and I have built skills in: $atouts."
+            en -> "My background has taught me rigor, teamwork and a sense of service."
+            atouts.isNotEmpty() -> "Mon parcours m'a appris la rigueur, l'esprit d'équipe et le sens du service, et j'ai développé des compétences en : $atouts."
+            else -> "Mon parcours m'a appris la rigueur, l'esprit d'équipe et le sens du service."
+        }
+        val p3 = if (en) "Motivated and available, I would be glad to discuss my application in an interview."
+        else "Motivé(e) et disponible, je serais heureux(se) de vous exposer ma motivation lors d'un entretien."
         return CvResponse(
-            cv = "PROFIL\n$nom, $ville. Candidat(e) motivé(e) visant un poste de ${p.metier_vise}.\n\n" +
-                "COMPÉTENCES\n${p.competences.ifBlank { a }}\n\n" +
-                "EXPÉRIENCE\n${p.experience.ifBlank { a }}\n\n" +
-                "FORMATION\n${p.formation.ifBlank { a }}",
-            lettre = "Madame, Monsieur,\n\nJe souhaite postuler au poste de ${p.metier_vise}. " +
-                "Ma formation et mes expériences m'ont appris la rigueur, l'esprit d'équipe et le sens du service. " +
-                "Je suis prêt(e) à relever de nouveaux défis et à apprendre vite au sein de votre structure.\n\n" +
-                "Je reste disponible pour un entretien.\n\nCordialement,\n$nom"
+            cv = CvDoc(
+                nom = nom, titre = poste, contact = contact, resume = resume, competences = comp,
+                experiences = lines(p.experience).map { Experience(poste = it) },
+                formations = lines(p.formation).map { Etude(diplome = it) },
+                certifications = items(p.certifications), langues = items(p.langues_parlees),
+                interets = items(p.interets)
+            ),
+            lettre = LettreDoc(
+                objet = when {
+                    en && poste.isNotEmpty() -> "Application for the position of $poste"
+                    en -> "Spontaneous application"
+                    poste.isNotEmpty() -> "Candidature au poste de $poste"
+                    else -> "Candidature spontanée"
+                },
+                destinataire = if (en) "Dear Sir or Madam," else "Madame, Monsieur,",
+                paragraphes = listOf(intro + contratPhrase, p2, p3),
+                politesse = if (en) "Thank you for considering my application. Yours faithfully,"
+                else "Dans l'attente de votre retour, je vous prie d'agréer, Madame, Monsieur, l'expression de mes salutations distinguées.",
+                signature = nom
+            )
         )
     }
 

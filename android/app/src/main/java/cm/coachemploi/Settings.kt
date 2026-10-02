@@ -5,11 +5,19 @@ import com.google.gson.Gson
 
 /** Formulaire du profil, partagé entre les onglets et mémorisé sur le téléphone. */
 data class Form(
-    val nom: String = "", val formation: String = "", val competences: String = "",
-    val experience: String = "", val ville: String = "", val metier: String = "", val en: Boolean = false
+    val nom: String = "", val telephone: String = "", val email: String = "",
+    val adresse: String = "", val ville: String = "", val lien: String = "",
+    val resume: String = "", val formation: String = "", val experience: String = "",
+    val certifications: String = "", val competences: String = "", val langues: String = "",
+    val interets: String = "", val metier: String = "", val contrat: String = "", val en: Boolean = false
 ) {
     val langue get() = if (en) "en" else "fr"
-    fun toProfil() = Profil(nom, formation, competences, experience, ville, metier, langue)
+    fun toProfil() = Profil(
+        nom = nom, formation = formation, competences = competences, experience = experience,
+        ville = ville, metier_vise = metier, langue = langue, telephone = telephone, email = email,
+        adresse = adresse, lien = lien, resume = resume, langues_parlees = langues,
+        interets = interets, certifications = certifications, contrat = contrat
+    )
 }
 
 /** Réglages enregistrés sur le téléphone : adresse du serveur, mode démo, profil. */
