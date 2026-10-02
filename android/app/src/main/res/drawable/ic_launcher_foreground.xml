@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Poignée -->
+    <path
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="3"
+        android:strokeLineCap="round"
+        android:pathData="M46,46 L46,41 Q46,38 49,38 L59,38 Q62,38 62,41 L62,46" />
+    <!-- Corps de la mallette -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M38,46 L70,46 Q74,46 74,50 L74,68 Q74,72 70,72 L38,72 Q34,72 34,68 L34,50 Q34,46 38,46 Z" />
+    <!-- Bande et fermoir -->
+    <path
+        android:strokeColor="#0B6E4F"
+        android:strokeWidth="2"
+        android:pathData="M34,58 L74,58" />
+    <path
+        android:fillColor="#0B6E4F"
+        android:pathData="M51,55 L57,55 L57,61 L51,61 Z" />
+    <!-- Étincelle IA -->
+    <path
+        android:fillColor="#FFC857"
+        android:pathData="M78,26 L80.4,32.6 L87,35 L80.4,37.4 L78,44 L75.6,37.4 L69,35 L75.6,32.6 Z" />
+</vector>
