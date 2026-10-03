@@ -9,14 +9,16 @@ data class Form(
     val adresse: String = "", val ville: String = "", val lien: String = "",
     val resume: String = "", val formation: String = "", val experience: String = "",
     val certifications: String = "", val competences: String = "", val langues: String = "",
-    val interets: String = "", val metier: String = "", val contrat: String = "", val en: Boolean = false
+    val interets: String = "", val metier: String = "", val contrat: String = "", val en: Boolean = false,
+    val offre: String = "", val modele: String = "moderne", val couleur: String = "#0B6E4F",
+    val photo: String = ""
 ) {
     val langue get() = if (en) "en" else "fr"
     fun toProfil() = Profil(
         nom = nom, formation = formation, competences = competences, experience = experience,
         ville = ville, metier_vise = metier, langue = langue, telephone = telephone, email = email,
         adresse = adresse, lien = lien, resume = resume, langues_parlees = langues,
-        interets = interets, certifications = certifications, contrat = contrat
+        interets = interets, certifications = certifications, contrat = contrat, offre = offre
     )
 }
 

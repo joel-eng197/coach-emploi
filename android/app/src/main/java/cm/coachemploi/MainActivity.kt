@@ -2,7 +2,19 @@
 
 package cm.coachemploi
 
+import android.app.Activity
 import android.content.Context
+import android.content.ContextWrapper
+import android.net.Uri
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.unit.sp
 import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -54,13 +66,26 @@ fun share(ctx: Context, text: String) {
     ctx.startActivity(Intent.createChooser(i, "Partager"))
 }
 
+fun Context.findActivity(): Activity? {
+    var c: Context = this
+    while (c is ContextWrapper) {
+        if (c is Activity) return c
+        c = c.baseContext
+    }
+    return null
+}
+
 @Composable
-fun Header(demo: Boolean) {
+fun Header(demo: Boolean, onClear: () -> Unit, onQuit: () -> Unit) {
+    var menu by remember { mutableStateOf(false) }
     Surface(color = MaterialTheme.colorScheme.primary, modifier = Modifier.fillMaxWidth()) {
-        Row(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            Modifier.padding(start = 16.dp, end = 4.dp, top = 8.dp, bottom = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
             Image(painterResource(R.drawable.ic_launcher_foreground), contentDescription = "Logo", modifier = Modifier.size(56.dp))
             Spacer(Modifier.width(8.dp))
-            Column {
+            Column(Modifier.weight(1f)) {
                 Text(
                     "Coach Emploi IA", style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimary
@@ -70,6 +95,15 @@ fun Header(demo: Boolean) {
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onPrimary
                 )
             }
+            Box {
+                IconButton(onClick = { menu = true }) {
+                    Text("⋮", fontSize = 26.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimary)
+                }
+                DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                    DropdownMenuItem(text = { Text("Effacer le contenu") }, onClick = { menu = false; onClear() })
+                    DropdownMenuItem(text = { Text("Quitter") }, onClick = { menu = false; onQuit() })
+                }
+            }
         }
     }
 }
@@ -77,13 +111,24 @@ fun Header(demo: Boolean) {
 @Composable
 fun App(vm: CoachViewModel = viewModel()) {
     var tab by remember { mutableIntStateOf(0) }
+    var askClear by remember { mutableStateOf(false) }
+    val ctx = LocalContext.current
     val ui by vm.ui.collectAsState()
     val history by vm.history.collectAsState()
     val demo by vm.demo.collectAsState()
     val tabs = listOf("CV & Lettre", "Diagnostic", "Entretien", "Historique", "Réglages")
+    if (askClear) {
+        AlertDialog(
+            onDismissRequest = { askClear = false },
+            title = { Text("Effacer le contenu ?") },
+            text = { Text("Le profil saisi, la photo et les résultats affichés seront supprimés. L'historique est conservé.") },
+            confirmButton = { TextButton({ vm.clearAll(); askClear = false; tab = 0 }) { Text("Effacer") } },
+            dismissButton = { TextButton({ askClear = false }) { Text("Annuler") } }
+        )
+    }
     Scaffold { pad ->
         Column(Modifier.padding(pad).fillMaxSize()) {
-            Header(demo)
+            Header(demo, onClear = { askClear = true }, onQuit = { ctx.findActivity()?.finishAffinity() })
             ScrollableTabRow(selectedTabIndex = tab, edgePadding = 0.dp) {
                 tabs.forEachIndexed { i, t -> Tab(tab == i, { tab = i }, text = { Text(t) }) }
             }
@@ -106,9 +151,35 @@ fun Titre(texte: String) =
     Text(texte, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
 
 @Composable
+fun DocActions(ctx: Context, r: CvResponse, lettre: Boolean, loading: Boolean, onRegenerate: () -> Unit) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Button({ Exports.export(ctx, r, lettre, "pdf", true) }, Modifier.weight(1f)) { Text("Télécharger PDF") }
+        Button({ Exports.export(ctx, r, lettre, "docx", true) }, Modifier.weight(1f)) { Text("Télécharger Word") }
+    }
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        OutlinedButton({ Exports.export(ctx, r, lettre, "pdf", false) }, Modifier.weight(1f)) { Text("Partager") }
+        OutlinedButton(
+            { Exports.copy(ctx, if (lettre) r.lettreText() else r.cvText()) }, Modifier.weight(1f)
+        ) { Text("Copier le texte") }
+    }
+    if (lettre) {
+        OutlinedButton(onRegenerate, Modifier.fillMaxWidth(), enabled = !loading) {
+            Text("Régénérer la lettre (autre variante)")
+        }
+    }
+}
+
+@Composable
 fun CvScreen(ui: UiState, vm: CoachViewModel, f: Form, onForm: (Form) -> Unit) {
     val ctx = LocalContext.current
     val contrats = listOf("CDI", "CDD", "Stage", "Alternance", "Freelance", "Temps partiel")
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
+        if (uri != null) {
+            val path = PhotoStore.save(ctx, uri)
+            if (path != null) vm.setPhoto(path)
+            else Toast.makeText(ctx, "Photo illisible", Toast.LENGTH_SHORT).show()
+        }
+    }
     Column(
         Modifier.verticalScroll(rememberScrollState()).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -117,6 +188,13 @@ fun CvScreen(ui: UiState, vm: CoachViewModel, f: Form, onForm: (Form) -> Unit) {
             "Seul le nom est obligatoire. Les rubriques laissées vides sont simplement ignorées dans ton CV.",
             style = MaterialTheme.typography.bodySmall
         )
+        Titre("Photo (optionnelle)")
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            if (f.photo.isNotBlank()) PhotoCircle(f.photo, 64.dp)
+            Button({ picker.launch("image/*") }) { Text(if (f.photo.isBlank()) "Choisir une photo" else "Changer") }
+            if (f.photo.isNotBlank()) TextButton({ vm.setPhoto("") }) { Text("Retirer") }
+        }
+
         Titre("Identité et contact")
         Champ("Nom complet (obligatoire)", f.nom) { onForm(f.copy(nom = it)) }
         Champ("Téléphone", f.telephone, KeyboardType.Phone) { onForm(f.copy(telephone = it)) }
@@ -127,10 +205,22 @@ fun CvScreen(ui: UiState, vm: CoachViewModel, f: Form, onForm: (Form) -> Unit) {
 
         Titre("Profil")
         Champ("Résumé professionnel (courte accroche)", f.resume, minLines = 3) { onForm(f.copy(resume = it)) }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+            TextButton(
+                onClick = { vm.reformuler("resume", f.resume) },
+                enabled = !ui.loading && f.resume.isNotBlank()
+            ) { Text("✨ Reformuler (style pro)") }
+        }
 
         Titre("Parcours")
         Champ("Formation / diplômes", f.formation, minLines = 2) { onForm(f.copy(formation = it)) }
         Champ("Expériences (stages, jobs, projets), une par ligne", f.experience, minLines = 3) { onForm(f.copy(experience = it)) }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+            TextButton(
+                onClick = { vm.reformuler("experiences", f.experience) },
+                enabled = !ui.loading && f.experience.isNotBlank()
+            ) { Text("✨ Reformuler (style pro)") }
+        }
         Champ("Certifications et formations complémentaires", f.certifications, minLines = 2) { onForm(f.copy(certifications = it)) }
 
         Titre("Compétences, langues et loisirs")
@@ -150,6 +240,38 @@ fun CvScreen(ui: UiState, vm: CoachViewModel, f: Form, onForm: (Form) -> Unit) {
                 )
             }
         }
+        Champ("Lien ou texte de l'offre d'emploi (optionnel)", f.offre, minLines = 3) { onForm(f.copy(offre = it)) }
+        Text(
+            "Colle le lien ou le texte de l'annonce : l'IA reprend ses mots-clés dans ton CV et ta lettre.",
+            style = MaterialTheme.typography.bodySmall
+        )
+
+        Titre("Modèle du CV")
+        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Modeles.forEach { (id, label) ->
+                FilterChip(
+                    selected = f.modele == id,
+                    onClick = { onForm(f.copy(modele = id)) },
+                    label = { Text(label) }
+                )
+            }
+        }
+        Text("Couleur principale", style = MaterialTheme.typography.bodyMedium)
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Palette.forEach { hex ->
+                val sel = f.couleur.equals(hex, ignoreCase = true)
+                Box(
+                    Modifier.size(36.dp).clip(CircleShape).background(Color(colorInt(hex)))
+                        .border(
+                            if (sel) 3.dp else 1.dp,
+                            if (sel) MaterialTheme.colorScheme.onSurface else Color.LightGray,
+                            CircleShape
+                        )
+                        .clickable { onForm(f.copy(couleur = hex)) }
+                )
+            }
+        }
+
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("Générer en anglais"); Spacer(Modifier.width(8.dp))
             Switch(f.en, { onForm(f.copy(en = it)) })
@@ -159,13 +281,15 @@ fun CvScreen(ui: UiState, vm: CoachViewModel, f: Form, onForm: (Form) -> Unit) {
             enabled = !ui.loading && f.nom.isNotBlank(), modifier = Modifier.fillMaxWidth()
         ) { Text("Générer mon CV et ma lettre") }
 
-        ui.cv?.let { r ->
+        ui.cv?.let { raw ->
+            // Le modèle, la couleur et la photo s'appliquent tout de suite, sans régénérer
+            val r = raw.copy(modele = f.modele, couleur = f.couleur, photo = f.photo)
             Titre("Mon CV")
             CvDocument(r)
-            ExportButtons({ PdfExport.exportCv(ctx, r, false) }, { PdfExport.exportCv(ctx, r, true) }) { share(ctx, r.cvText()) }
+            DocActions(ctx, r, false, ui.loading) { }
             Titre("Ma lettre de motivation")
             LettreDocument(r)
-            ExportButtons({ PdfExport.exportLettre(ctx, r, false) }, { PdfExport.exportLettre(ctx, r, true) }) { share(ctx, r.lettreText()) }
+            DocActions(ctx, r, true, ui.loading) { vm.regenerateLettre(f.toProfil()) }
         }
     }
 }
@@ -211,7 +335,7 @@ fun Bloc(titre: String, lignes: List<String>) {
 
 @Composable
 fun InterviewScreen(ui: UiState, vm: CoachViewModel, f: Form) {
-    var metier by remember { mutableStateOf(f.metier) }
+    var metier by remember(f.metier) { mutableStateOf(f.metier) }
     var answer by remember { mutableStateOf("") }
     Column(Modifier.padding(16.dp).fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Champ("Poste visé", metier) { metier = it }
@@ -312,11 +436,3 @@ fun Champ(
     )
 }
 
-@Composable
-fun ExportButtons(onPdfShare: () -> Unit, onPdfSave: () -> Unit, onText: () -> Unit) {
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Button(onPdfShare) { Text("Partager en PDF") }
-        OutlinedButton(onPdfSave) { Text("Télécharger") }
-    }
-    TextButton(onText) { Text("Partager en texte") }
-}

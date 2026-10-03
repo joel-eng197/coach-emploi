@@ -15,7 +15,7 @@ data class Profil(
     val langue: String = "fr",
     val telephone: String = "", val email: String = "", val adresse: String = "", val lien: String = "",
     val resume: String = "", val langues_parlees: String = "", val interets: String = "",
-    val certifications: String = "", val contrat: String = ""
+    val certifications: String = "", val contrat: String = "", val offre: String = ""
 )
 data class CvRequest(val profil: Profil)
 // Valeurs par défaut : Gson tolère ainsi un champ manquant dans la réponse de l'IA
@@ -38,8 +38,13 @@ data class LettreDoc(
 /** Réponse complète : date, lieu et langue sont ajoutés par l'appli au moment de la génération. */
 data class CvResponse(
     val cv: CvDoc = CvDoc(), val lettre: LettreDoc = LettreDoc(),
-    val date: String = "", val lieu: String = "", val langue: String = "fr"
+    val date: String = "", val lieu: String = "", val langue: String = "fr",
+    val modele: String = "moderne", val couleur: String = "#0B6E4F", val photo: String = "",
+    val offre_status: String = ""
 )
+data class LettreRequest(val profil: Profil, val precedente: LettreDoc? = null)
+data class ReformulerRequest(val type: String, val texte: String, val langue: String, val metier: String)
+data class ReformulerResponse(val texte: String = "")
 data class Formation(val titre: String = "", val pourquoi: String = "")
 data class SkillsResponse(
     val score: Int = 0,
@@ -64,6 +69,8 @@ interface CoachApi {
     @GET("health") suspend fun health(): ResponseBody
     @POST("cv") suspend fun cv(@Body r: CvRequest): CvResponse
     @POST("skills-gap") suspend fun skills(@Body r: CvRequest): SkillsResponse
+    @POST("lettre") suspend fun lettre(@Body r: LettreRequest): LettreDoc
+    @POST("reformuler") suspend fun reformuler(@Body r: ReformulerRequest): ReformulerResponse
     @POST("interview") suspend fun interview(@Body r: InterviewRequest): InterviewResponse
 }
 

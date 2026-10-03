@@ -32,6 +32,9 @@ Règles :
 - Lettre : objet clair, 3 paragraphes de 2 à 4 phrases (accroche, atouts, conclusion avec disponibilité),
   adaptée au métier visé et au type de contrat recherché. Sans métier visé, rédige une candidature
   spontanée. Pas de date ni d'adresse dans la lettre : l'application les ajoute.
+- Si une OFFRE D'EMPLOI est fournie : reprends ses mots-clés et exigences quand ils correspondent réellement
+  au profil (titre, résumé, compétences, lettre) et mets en avant d'abord les éléments pertinents. N'invente
+  rien pour coller à l'offre.
 - "politesse" : formule de politesse complète ; "signature" : le nom du candidat.
 Les retours à la ligne s'écrivent \\n dans le JSON."""
 
@@ -55,3 +58,25 @@ Règles : une seule question à la fois. Après chaque réponse du candidat :
 2) puis pose la question suivante. Au bout de 6 questions, conclus par une note sur 10
 et 3 conseils précis. Au tout premier message, salue brièvement et pose la première question.
 Maximum 90 mots par message."""
+
+
+LETTRE_SYSTEM = BASE + """
+
+TÂCHE : écrire UNE NOUVELLE VARIANTE de lettre de motivation, différente de la précédente.
+On te fournit le profil, éventuellement une offre d'emploi et la lettre précédente.
+Réponds UNIQUEMENT avec un objet JSON valide :
+{"objet": "", "destinataire": "Madame, Monsieur,", "paragraphes": ["", "", ""], "politesse": "", "signature": ""}
+Règles : change l'angle d'attaque, l'ordre des idées et les tournures par rapport à la lettre précédente ;
+mêmes faits, rien d'inventé ; 3 paragraphes de 2 à 4 phrases ; si une offre est fournie, reprends ses
+mots-clés pertinents ; pas de date ni d'adresse ; signature = nom du candidat."""
+
+REFORMULER_SYSTEM = BASE + """
+
+TÂCHE : réécrire un texte saisi par un candidat pour son CV.
+Objectif : vocabulaire percutant et professionnel, phrases fluides, orthographe et grammaire parfaites.
+Règles : conserve strictement les faits (n'ajoute aucun chiffre, employeur, diplôme ou résultat non écrit) ;
+garde la langue demandée.
+- type "resume" : 2 à 3 phrases, sans répéter « je ».
+- type "experiences" : une expérience par ligne ; chaque ligne commence par un verbe d'action au passé ;
+  garde le lieu et la période s'ils sont donnés.
+Réponds UNIQUEMENT avec le texte réécrit, sans guillemets ni commentaire."""

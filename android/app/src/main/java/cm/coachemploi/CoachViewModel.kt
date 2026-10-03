@@ -9,6 +9,7 @@ import androidx.lifecycle.viewModelScope
 import com.google.gson.Gson
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import java.io.File
 
 data class UiState(
     val loading: Boolean = false,
@@ -37,6 +38,7 @@ class CoachViewModel(app: Application) : AndroidViewModel(app) {
 
     val serverUrl: String get() = settings.serverUrl
     private val erreur = "Connexion impossible. Vérifiez votre réseau et réessayez."
+    private var variante = 0
 
     fun updateForm(f: Form) { form = f; settings.saveForm(f) }
 
@@ -46,6 +48,25 @@ class CoachViewModel(app: Application) : AndroidViewModel(app) {
         settings.serverUrl = url
         if (url.isNotBlank()) setDemo(false)
         _ui.update { it.copy(error = null, notice = "Adresse enregistrée.") }
+    }
+
+    fun setPhoto(path: String) {
+        val old = form.photo
+        if (old.isNotBlank() && old != path) {
+            try { File(old).delete() } catch (e: Exception) { }
+        }
+        updateForm(form.copy(photo = path))
+    }
+
+    /** Efface le profil saisi, la photo, les résultats et l'entretien (l'historique est conservé). */
+    fun clearAll() {
+        val old = form.photo
+        if (old.isNotBlank()) {
+            try { File(old).delete() } catch (e: Exception) { }
+        }
+        updateForm(Form(modele = form.modele, couleur = form.couleur))
+        variante = 0
+        _ui.value = UiState(notice = "Contenu effacé.")
     }
 
     fun testConnection() = viewModelScope.launch {
@@ -67,13 +88,24 @@ class CoachViewModel(app: Application) : AndroidViewModel(app) {
     fun generateCv(p: Profil) = viewModelScope.launch {
         _ui.update { it.copy(loading = true, error = null, notice = null) }
         val isDemo = settings.demo
+        val f = form
         try {
             val raw = if (isDemo) Demo.cv(p) else Net.api(settings.serverUrl).cv(CvRequest(p))
             // La date du jour est ajoutée automatiquement par l'appli
-            val r = raw.copy(date = today(p.langue), lieu = p.ville.ifBlank { p.adresse }, langue = p.langue)
+            val r = raw.copy(
+                date = today(p.langue), lieu = p.ville.ifBlank { p.adresse }, langue = p.langue,
+                modele = f.modele, couleur = f.couleur, photo = f.photo
+            )
+            variante = 0
             val titre = (if (isDemo) "Démo · " else "") + "CV : " + p.metier_vise.ifBlank { p.nom }
             dao.insert(Saved(type = "cv", title = titre, json = gson.toJson(r)))
-            _ui.update { it.copy(loading = false, cv = r) }
+            val avis = when {
+                raw.offre_status == "lien_illisible" ->
+                    "Lien de l'offre illisible : colle plutôt le texte de l'annonce."
+                isDemo && p.offre.isNotBlank() -> "Mode démo : l'adaptation à l'offre nécessite le serveur IA."
+                else -> null
+            }
+            _ui.update { it.copy(loading = false, cv = r, notice = avis) }
         } catch (e: Exception) {
             val last = dao.last("cv")?.let { parseCv(it.json) }
             if (last != null) {
@@ -81,6 +113,47 @@ class CoachViewModel(app: Application) : AndroidViewModel(app) {
             } else {
                 _ui.update { it.copy(loading = false, error = erreur) }
             }
+        }
+    }
+
+    /** Demande une autre variante de la lettre de motivation. */
+    fun regenerateLettre(p: Profil) = viewModelScope.launch {
+        val cur = _ui.value.cv ?: return@launch
+        _ui.update { it.copy(loading = true, error = null, notice = null) }
+        val isDemo = settings.demo
+        variante++
+        try {
+            val l = if (isDemo) Demo.lettre(p, variante)
+            else Net.api(settings.serverUrl).lettre(LettreRequest(p, cur.lettre))
+            val r = cur.copy(lettre = l)
+            val titre = (if (isDemo) "Démo · " else "") + "CV : " + p.metier_vise.ifBlank { p.nom }
+            dao.insert(Saved(type = "cv", title = titre, json = gson.toJson(r)))
+            _ui.update { it.copy(loading = false, cv = r, notice = "Nouvelle variante de la lettre.") }
+        } catch (e: Exception) {
+            _ui.update { it.copy(loading = false, error = erreur) }
+        }
+    }
+
+    /** Réécrit le résumé ou les expériences avec un style professionnel. */
+    fun reformuler(type: String, texte: String) = viewModelScope.launch {
+        if (texte.isBlank()) {
+            _ui.update { it.copy(notice = "Écris d'abord un texte à reformuler.") }
+            return@launch
+        }
+        _ui.update { it.copy(loading = true, error = null, notice = null) }
+        val isDemo = settings.demo
+        try {
+            val out = if (isDemo) Demo.reformuler(texte)
+            else Net.api(settings.serverUrl).reformuler(
+                ReformulerRequest(type, texte, form.langue, form.metier)
+            ).texte
+            val f = form
+            updateForm(if (type == "resume") f.copy(resume = out) else f.copy(experience = out))
+            val msg = if (isDemo) "Mode démo : correction simple. Le serveur IA propose une vraie réécriture."
+            else "Texte reformulé ✔"
+            _ui.update { it.copy(loading = false, notice = msg) }
+        } catch (e: Exception) {
+            _ui.update { it.copy(loading = false, error = erreur) }
         }
     }
 

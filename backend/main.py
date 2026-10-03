@@ -1,8 +1,14 @@
 """API Coach Emploi IA. Lancer : uvicorn main:app --host 0.0.0.0 --port 8000
 Variable d'environnement requise : ANTHROPIC_API_KEY (jamais dans l'appli Android)."""
+import ipaddress
 import json
 import os
+import re
+import socket
 import time
+import urllib.request
+from html import unescape
+from urllib.parse import urlparse
 from collections import defaultdict
 from pathlib import Path
 
@@ -10,13 +16,59 @@ import anthropic
 from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel
 
-from prompts import CV_SYSTEM, INTERVIEW_SYSTEM, SKILLS_SYSTEM
+from prompts import CV_SYSTEM, INTERVIEW_SYSTEM, LETTRE_SYSTEM, REFORMULER_SYSTEM, SKILLS_SYSTEM
 
 app = FastAPI(title="Coach Emploi IA")
 client = anthropic.Anthropic()
 MODEL = os.getenv("MODEL", "claude-sonnet-5-5")
 CATALOGUE = (Path(__file__).parent / "data" / "formations.json").read_text(encoding="utf-8")
 _hits: dict = defaultdict(list)
+
+
+def _check_url(url: str) -> None:
+    """Refuse les adresses locales ou privées (protection contre les abus du lecteur d'annonces)."""
+    u = urlparse(url)
+    if u.scheme not in ("http", "https") or not u.hostname:
+        raise ValueError("url invalide")
+    port = u.port or (443 if u.scheme == "https" else 80)
+    for info in socket.getaddrinfo(u.hostname, port):
+        ip = ipaddress.ip_address(info[4][0])
+        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast:
+            raise ValueError("adresse interdite")
+
+
+class _SafeRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        _check_url(newurl)
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+def fetch_page(url: str) -> str:
+    _check_url(url)
+    opener = urllib.request.build_opener(_SafeRedirect())
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (CoachEmploiIA)"})
+    with opener.open(req, timeout=8) as r:
+        raw = r.read(300_000)
+    html = raw.decode("utf-8", errors="ignore")
+    html = re.sub(r"(?is)<(script|style|noscript|svg).*?</\1>", " ", html)
+    text = unescape(re.sub(r"(?s)<[^>]+>", " ", html))
+    text = re.sub(r"\s+", " ", text).strip()
+    if len(text) < 200:
+        raise ValueError("page vide")
+    return text[:6000]
+
+
+def offre_texte(offre: str):
+    """Retourne (texte de l'offre, statut). Le lien est lu par le serveur ; sinon le texte collé est utilisé."""
+    offre = (offre or "").strip()
+    if not offre:
+        return "", ""
+    if re.match(r"^https?://\S+$", offre):
+        try:
+            return fetch_page(offre), "ok"
+        except Exception:
+            return "", "lien_illisible"
+    return offre[:6000], "ok"
 
 
 def limiter(request: Request, max_par_minute: int = 10) -> None:
@@ -63,6 +115,7 @@ class Profil(BaseModel):
     interets: str = ""
     certifications: str = ""
     contrat: str = ""
+    offre: str = ""
 
 
 class Experience(BaseModel):
@@ -102,10 +155,23 @@ class LettreDoc(BaseModel):
 class CvOut(BaseModel):
     cv: CvDoc = CvDoc()
     lettre: LettreDoc = LettreDoc()
+    offre_status: str = ""
 
 
 class CvRequest(BaseModel):
     profil: Profil
+
+
+class LettreRequest(BaseModel):
+    profil: Profil
+    precedente: LettreDoc | None = None
+
+
+class ReformulerRequest(BaseModel):
+    type: str = "resume"
+    texte: str
+    langue: str = "fr"
+    metier: str = ""
 
 
 class Msg(BaseModel):
@@ -127,9 +193,16 @@ def health():
 @app.post("/cv")
 def cv(req: CvRequest, request: Request):
     limiter(request)
-    data = ask_json(CV_SYSTEM, f"Langue : {req.profil.langue}\nProfil : {req.profil.model_dump_json()}")
+    offre, statut = offre_texte(req.profil.offre)
+    profil = req.profil.model_copy(update={"offre": ""}).model_dump_json()
+    user = f"Langue : {req.profil.langue}\nProfil : {profil}"
+    if offre:
+        user += f"\nOFFRE D'EMPLOI (adapte le CV et la lettre à cette offre) :\n{offre}"
+    data = ask_json(CV_SYSTEM, user)
     try:
-        return CvOut(**data).model_dump()
+        res = CvOut(**data)
+        res.offre_status = statut
+        return res.model_dump()
     except Exception:
         raise HTTPException(502, "Réponse IA invalide, réessayez.")
 
@@ -153,3 +226,30 @@ def interview(req: InterviewRequest, request: Request):
         msgs = [{"role": "user", "content": "Commence l'entretien."}]
     system = INTERVIEW_SYSTEM + f"\nMétier visé : {req.metier}\nLangue : {req.langue}"
     return {"reponse": ask(system, msgs, 400)}
+
+
+@app.post("/lettre")
+def lettre(req: LettreRequest, request: Request):
+    limiter(request)
+    offre, _ = offre_texte(req.profil.offre)
+    profil = req.profil.model_copy(update={"offre": ""}).model_dump_json()
+    user = f"Langue : {req.profil.langue}\nProfil : {profil}"
+    if offre:
+        user += f"\nOFFRE D'EMPLOI :\n{offre}"
+    if req.precedente:
+        user += "\nLETTRE PRÉCÉDENTE (à ne pas reproduire) :\n" + "\n".join(req.precedente.paragraphes)
+    data = ask_json(LETTRE_SYSTEM, user)
+    try:
+        return LettreDoc(**data).model_dump()
+    except Exception:
+        raise HTTPException(502, "Réponse IA invalide, réessayez.")
+
+
+@app.post("/reformuler")
+def reformuler(req: ReformulerRequest, request: Request):
+    limiter(request)
+    texte = req.texte.strip()[:4000]
+    if not texte:
+        raise HTTPException(400, "Texte vide.")
+    msg = f"Type : {req.type}\nLangue : {req.langue}\nMétier visé : {req.metier}\nTexte :\n{texte}"
+    return {"texte": ask(REFORMULER_SYSTEM, [{"role": "user", "content": msg}], 1000).strip()}

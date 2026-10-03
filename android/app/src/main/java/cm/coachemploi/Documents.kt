@@ -75,3 +75,77 @@ fun CvResponse.lettreText(): String {
     sb.append('\n').append(lettre.signature.ifBlank { cv.nom })
     return sb.toString().trim()
 }
+
+/** Contenu neutre d'un document : affiché à l'écran, exporté en PDF et en Word. */
+sealed class Blk {
+    class Header(val nom: String, val titre: String, val contact: String, val date: String) : Blk()
+    class Heading(val text: String) : Blk()
+    class Para(
+        val text: String, val size: Float = 10.5f, val bold: Boolean = false, val italic: Boolean = false,
+        val muted: Boolean = false, val accent: Boolean = false, val right: Boolean = false
+    ) : Blk()
+    class Bullet(val text: String) : Blk()
+    class Gap(val h: Float) : Blk()
+}
+
+fun CvResponse.cvBlocks(): List<Blk> {
+    val t = titles(langue == "en")
+    val c = cv
+    val out = ArrayList<Blk>()
+    out.add(Blk.Header(c.nom, c.titre, c.contact.joinToString("  •  "), if (date.isBlank()) "" else t.genere + " " + date))
+    if (c.resume.isNotBlank()) { out.add(Blk.Heading(t.profil)); out.add(Blk.Para(c.resume)) }
+    if (c.competences.isNotEmpty()) {
+        out.add(Blk.Heading(t.competences))
+        c.competences.forEach { out.add(Blk.Bullet(it)) }
+    }
+    if (c.experiences.isNotEmpty()) {
+        out.add(Blk.Heading(t.experience))
+        c.experiences.forEach { e ->
+            if (e.poste.isNotBlank()) out.add(Blk.Para(e.poste, 11.5f, bold = true))
+            val sous = listOf(e.organisation, e.periode).filter { it.isNotBlank() }.joinToString("  |  ")
+            if (sous.isNotBlank()) out.add(Blk.Para(sous, 9.5f, italic = true, muted = true))
+            e.details.forEach { out.add(Blk.Bullet(it)) }
+            out.add(Blk.Gap(6f))
+        }
+    }
+    if (c.formations.isNotEmpty()) {
+        out.add(Blk.Heading(t.formation))
+        c.formations.forEach { f ->
+            if (f.diplome.isNotBlank()) out.add(Blk.Para(f.diplome, 11.5f, bold = true))
+            val sous = listOf(f.etablissement, f.periode).filter { it.isNotBlank() }.joinToString("  |  ")
+            if (sous.isNotBlank()) out.add(Blk.Para(sous, 9.5f, italic = true, muted = true))
+            out.add(Blk.Gap(6f))
+        }
+    }
+    if (c.certifications.isNotEmpty()) {
+        out.add(Blk.Heading(t.certifs))
+        c.certifications.forEach { out.add(Blk.Bullet(it)) }
+    }
+    if (c.langues.isNotEmpty()) {
+        out.add(Blk.Heading(t.langues))
+        c.langues.forEach { out.add(Blk.Bullet(it)) }
+    }
+    if (c.interets.isNotEmpty()) {
+        out.add(Blk.Heading(t.interets))
+        out.add(Blk.Para(c.interets.joinToString("  •  ")))
+    }
+    return out
+}
+
+fun CvResponse.lettreBlocks(): List<Blk> {
+    val t = titles(langue == "en")
+    val out = ArrayList<Blk>()
+    out.add(Blk.Para(cv.nom, 13f, bold = true, accent = true))
+    cv.contact.forEach { out.add(Blk.Para(it, 9.5f, muted = true)) }
+    out.add(Blk.Gap(12f))
+    val ld = lieuDate()
+    if (ld.isNotBlank()) out.add(Blk.Para(ld, 10f, right = true))
+    out.add(Blk.Gap(10f))
+    if (lettre.objet.isNotBlank()) out.add(Blk.Para(t.objet + " " + lettre.objet, 11f, bold = true))
+    if (lettre.destinataire.isNotBlank()) { out.add(Blk.Gap(4f)); out.add(Blk.Para(lettre.destinataire, 11f)) }
+    lettre.paragraphes.filter { it.isNotBlank() }.forEach { out.add(Blk.Gap(3f)); out.add(Blk.Para(it, 11f)) }
+    if (lettre.politesse.isNotBlank()) { out.add(Blk.Gap(3f)); out.add(Blk.Para(lettre.politesse, 11f)) }
+    out.add(Blk.Gap(14f))
+    out.add(Blk.Para(lettre.signature.ifBlank { cv.nom }, 11f, bold = true))
+    return out
+}

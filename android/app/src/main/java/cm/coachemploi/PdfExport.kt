@@ -1,35 +1,31 @@
 package cm.coachemploi
 
-import android.content.ContentValues
-import android.content.Context
-import android.content.Intent
+import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
+import android.graphics.Path
+import android.graphics.RectF
 import android.graphics.Typeface
 import android.graphics.pdf.PdfDocument
-import android.os.Build
-import android.os.Environment
-import android.provider.MediaStore
 import android.text.Layout
 import android.text.StaticLayout
 import android.text.TextPaint
-import android.widget.Toast
-import androidx.core.content.FileProvider
 import java.io.File
 import java.io.FileOutputStream
 
-/** Petit rédacteur de PDF A4 : texte qui passe à la ligne, puces, filets, nouvelles pages automatiques. */
-private class PdfWriter {
+/** Rédacteur de PDF A4 : texte à la ligne, puces, filets, bandeau, photo ronde, pages automatiques. */
+private class PdfWriter(private val serif: Boolean) {
     private val pageW = 595
     private val pageH = 842
-    private val margin = 44f
+    val margin = 44f
+    val pageWidth: Float get() = pageW.toFloat()
+    val contentWidth: Float get() = pageW - 2 * margin
     private val doc = PdfDocument()
     private var page: PdfDocument.Page? = null
     private var canvas: Canvas? = null
     private var number = 0
     private var y = 0f
-    val contentWidth = pageW - 2 * margin
 
     init { newPage() }
 
@@ -60,20 +56,25 @@ private class PdfWriter {
             italic -> Typeface.ITALIC
             else -> Typeface.NORMAL
         }
-        paint.typeface = Typeface.create(Typeface.SANS_SERIF, style)
+        paint.typeface = Typeface.create(if (serif) Typeface.SERIF else Typeface.SANS_SERIF, style)
         return StaticLayout.Builder.obtain(txt, 0, txt.length, paint, width)
             .setAlignment(align).setLineSpacing(0f, spacing).build()
     }
 
+    fun top(): Float = y
     fun gap(h: Float) { y += h }
+    fun moveTo(minY: Float) { if (y < minY) y = minY }
+
+    fun height(txt: String, size: Float, bold: Boolean, width: Float): Float =
+        layoutOf(txt, size, 0, bold, false, Layout.Alignment.ALIGN_NORMAL, width.toInt(), 1.2f, 0f).height.toFloat()
 
     fun text(
         txt: String, size: Float, col: Int, bold: Boolean = false, italic: Boolean = false,
         align: Layout.Alignment = Layout.Alignment.ALIGN_NORMAL, after: Float = 4f,
-        spacing: Float = 1.2f, letter: Float = 0f
+        spacing: Float = 1.2f, letter: Float = 0f, width: Float = contentWidth
     ) {
         if (txt.isBlank()) return
-        val layout = layoutOf(txt, size, col, bold, italic, align, contentWidth.toInt(), spacing, letter)
+        val layout = layoutOf(txt, size, col, bold, italic, align, width.toInt(), spacing, letter)
         ensure(layout.height.toFloat())
         val c = canvas!!
         c.save()
@@ -106,15 +107,37 @@ private class PdfWriter {
         val p = Paint()
         p.color = col
         p.strokeWidth = thickness
-        canvas!!.drawLine(margin, y, pageW - margin, y, p)
+        canvas!!.drawLine(margin, y, pageWidth - margin, y, p)
         y += thickness + after
     }
 
-    fun heading(title: String, accent: Int, line: Int) {
+    fun heading(title: String, textCol: Int, ruleCol: Int) {
         ensure(60f)
         y += 6f
-        text(title, 10f, accent, bold = true, after = 2f, letter = 0.1f)
-        rule(line, 0.8f, 6f)
+        text(title, 10f, textCol, bold = true, after = 2f, letter = 0.1f)
+        rule(ruleCol, 0.8f, 6f)
+    }
+
+    fun headingPlain(title: String, col: Int) {
+        ensure(50f)
+        y += 8f
+        text(title, 9f, col, after = 4f, letter = 0.2f)
+    }
+
+    fun band(col: Int, h: Float) {
+        val p = Paint()
+        p.color = col
+        canvas!!.drawRect(0f, 0f, pageWidth, h, p)
+    }
+
+    fun photoAt(bmp: Bitmap, x: Float, yy: Float, size: Float) {
+        val c = canvas!!
+        val path = Path()
+        path.addCircle(x + size / 2f, yy + size / 2f, size / 2f, Path.Direction.CW)
+        c.save()
+        c.clipPath(path)
+        c.drawBitmap(bmp, null, RectF(x, yy, x + size, yy + size), Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG))
+        c.restore()
     }
 
     fun finish(file: File) {
@@ -128,123 +151,76 @@ private class PdfWriter {
 object PdfExport {
     private val INK = Color.parseColor("#1F2933")
     private val MUTED = Color.parseColor("#616E7C")
-    private val ACCENT = Color.parseColor("#0B6E4F")
     private val LINE = Color.parseColor("#D9E2EC")
+    private val WHITE = Color.WHITE
 
-    private fun dir(ctx: Context): File = File(ctx.cacheDir, "pdf").apply { mkdirs() }
-
-    private fun fileName(prefix: String, nom: String): String {
-        val clean = nom.replace(Regex("[^A-Za-z0-9]+"), "_").trim('_').ifBlank { "candidat" }
-        return prefix + "_" + clean + ".pdf"
-    }
-
-    private fun cvFile(ctx: Context, r: CvResponse): File {
-        val t = titles(r.langue == "en")
-        val c = r.cv
-        val w = PdfWriter()
-        w.text(c.nom, 24f, ACCENT, bold = true, after = 2f)
-        w.text(c.titre, 13f, INK, after = 2f)
-        if (c.contact.isNotEmpty()) w.text(c.contact.joinToString("  •  "), 10f, MUTED, after = 2f)
-        if (r.date.isNotBlank()) w.text(t.genere + " " + r.date, 9f, MUTED, italic = true, after = 6f)
-        w.rule(ACCENT, 2f, 8f)
-
-        if (c.resume.isNotBlank()) {
-            w.heading(t.profil, ACCENT, LINE)
-            w.text(c.resume, 10.5f, INK, after = 4f, spacing = 1.25f)
-        }
-        if (c.competences.isNotEmpty()) {
-            w.heading(t.competences, ACCENT, LINE)
-            c.competences.forEach { w.bullet(it, 10.5f, INK, ACCENT) }
-        }
-        if (c.experiences.isNotEmpty()) {
-            w.heading(t.experience, ACCENT, LINE)
-            c.experiences.forEach { e ->
-                w.text(e.poste, 11.5f, INK, bold = true, after = 1f)
-                w.text(listOf(e.organisation, e.periode).filter { it.isNotBlank() }.joinToString("  |  "),
-                    9.5f, MUTED, italic = true, after = 2f)
-                e.details.forEach { d -> w.bullet(d, 10.5f, INK, ACCENT) }
-                w.gap(6f)
+    private fun header(w: PdfWriter, h: Blk.Header, modele: String, accent: Int, photo: Bitmap?) {
+        val ps = 64f
+        val center = Layout.Alignment.ALIGN_CENTER
+        when (modele) {
+            "classique" -> {
+                if (photo != null) {
+                    w.photoAt(photo, (w.pageWidth - ps) / 2f, w.top(), ps)
+                    w.gap(ps + 8f)
+                }
+                w.text(h.nom, 24f, INK, bold = true, align = center, after = 2f)
+                w.text(h.titre, 12.5f, accent, align = center, after = 2f)
+                w.text(h.contact, 9.5f, MUTED, align = center, after = 2f)
+                w.text(h.date, 9f, MUTED, italic = true, align = center, after = 6f)
+                w.rule(accent, 1.5f, 8f)
+            }
+            "minimaliste" -> {
+                val tw = if (photo != null) w.contentWidth - ps - 14f else w.contentWidth
+                val y0 = w.top()
+                if (photo != null) w.photoAt(photo, w.pageWidth - w.margin - ps, y0, ps)
+                w.text(h.nom, 26f, INK, width = tw, after = 2f)
+                w.text(h.titre, 12.5f, MUTED, width = tw, after = 2f)
+                w.text(h.contact, 9.5f, MUTED, width = tw, after = 2f)
+                w.text(h.date, 9f, MUTED, italic = true, width = tw, after = 2f)
+                if (photo != null) w.moveTo(y0 + ps)
+                w.gap(10f)
+            }
+            else -> {
+                val tw = if (photo != null) w.contentWidth - ps - 14f else w.contentWidth
+                fun hh(t: String, size: Float, bold: Boolean): Float =
+                    if (t.isBlank()) 0f else w.height(t, size, bold, tw) + 3f
+                val textH = hh(h.nom, 24f, true) + hh(h.titre, 12.5f, false) +
+                    hh(h.contact, 9.5f, false) + hh(h.date, 9f, false)
+                val bandH = w.margin + maxOf(textH, if (photo != null) ps else 0f) + 18f
+                w.band(accent, bandH)
+                if (photo != null) w.photoAt(photo, w.pageWidth - w.margin - ps, w.margin, ps)
+                w.text(h.nom, 24f, WHITE, bold = true, width = tw, after = 3f)
+                w.text(h.titre, 12.5f, WHITE, width = tw, after = 3f)
+                w.text(h.contact, 9.5f, WHITE, width = tw, after = 3f)
+                w.text(h.date, 9f, WHITE, italic = true, width = tw, after = 3f)
+                w.moveTo(bandH + 6f)
             }
         }
-        if (c.formations.isNotEmpty()) {
-            w.heading(t.formation, ACCENT, LINE)
-            c.formations.forEach { f ->
-                w.text(f.diplome, 11.5f, INK, bold = true, after = 1f)
-                w.text(listOf(f.etablissement, f.periode).filter { it.isNotBlank() }.joinToString("  |  "),
-                    9.5f, MUTED, italic = true, after = 2f)
-                w.gap(6f)
+    }
+
+    fun build(r: CvResponse, blocks: List<Blk>, file: File) {
+        val accent = colorInt(r.couleur)
+        val modele = r.modele
+        val photo = loadBitmap(r.photo)
+        val w = PdfWriter(modele == "classique")
+        blocks.forEach { b ->
+            when (b) {
+                is Blk.Header -> header(w, b, modele, accent, photo)
+                is Blk.Heading -> when (modele) {
+                    "classique" -> w.heading(b.text, INK, accent)
+                    "minimaliste" -> w.headingPlain(b.text, MUTED)
+                    else -> w.heading(b.text, accent, LINE)
+                }
+                is Blk.Para -> w.text(
+                    b.text, b.size, if (b.accent) accent else if (b.muted) MUTED else INK,
+                    bold = b.bold, italic = b.italic,
+                    align = if (b.right) Layout.Alignment.ALIGN_OPPOSITE else Layout.Alignment.ALIGN_NORMAL,
+                    after = 3f, spacing = 1.25f
+                )
+                is Blk.Bullet -> w.bullet(b.text, 10.5f, INK, accent)
+                is Blk.Gap -> w.gap(b.h)
             }
         }
-        if (c.certifications.isNotEmpty()) {
-            w.heading(t.certifs, ACCENT, LINE)
-            c.certifications.forEach { w.bullet(it, 10.5f, INK, ACCENT) }
-        }
-        if (c.langues.isNotEmpty()) {
-            w.heading(t.langues, ACCENT, LINE)
-            c.langues.forEach { w.bullet(it, 10.5f, INK, ACCENT) }
-        }
-        if (c.interets.isNotEmpty()) {
-            w.heading(t.interets, ACCENT, LINE)
-            w.text(c.interets.joinToString("  •  "), 10.5f, INK, after = 4f)
-        }
-        val file = File(dir(ctx), fileName("CV", c.nom))
         w.finish(file)
-        return file
     }
-
-    private fun lettreFile(ctx: Context, r: CvResponse): File {
-        val t = titles(r.langue == "en")
-        val l = r.lettre
-        val c = r.cv
-        val w = PdfWriter()
-        w.text(c.nom, 13f, ACCENT, bold = true, after = 1f)
-        c.contact.forEach { w.text(it, 9.5f, MUTED, after = 1f) }
-        w.gap(14f)
-        w.text(r.lieuDate(), 10f, INK, align = Layout.Alignment.ALIGN_OPPOSITE, after = 18f)
-        if (l.objet.isNotBlank()) w.text(t.objet + " " + l.objet, 11f, INK, bold = true, after = 12f)
-        w.text(l.destinataire, 11f, INK, after = 10f)
-        l.paragraphes.forEach { w.text(it, 11f, INK, after = 9f, spacing = 1.3f) }
-        w.text(l.politesse, 11f, INK, after = 20f, spacing = 1.3f)
-        w.text(l.signature.ifBlank { c.nom }, 11f, INK, bold = true)
-        val file = File(dir(ctx), fileName("Lettre", c.nom))
-        w.finish(file)
-        return file
-    }
-
-    private fun share(ctx: Context, file: File) {
-        val uri = FileProvider.getUriForFile(ctx, ctx.packageName + ".fileprovider", file)
-        val i = Intent(Intent.ACTION_SEND)
-        i.type = "application/pdf"
-        i.putExtra(Intent.EXTRA_STREAM, uri)
-        i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        ctx.startActivity(Intent.createChooser(i, "Partager le PDF"))
-    }
-
-    /** Enregistre dans Téléchargements (Android 10+) ; sinon ouvre le partage. */
-    private fun saveToDownloads(ctx: Context, file: File) {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) { share(ctx, file); return }
-        val values = ContentValues()
-        values.put(MediaStore.Downloads.DISPLAY_NAME, file.name)
-        values.put(MediaStore.Downloads.MIME_TYPE, "application/pdf")
-        values.put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
-        val uri = ctx.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
-        if (uri == null) {
-            Toast.makeText(ctx, "Enregistrement impossible", Toast.LENGTH_LONG).show()
-            return
-        }
-        ctx.contentResolver.openOutputStream(uri)?.use { out -> file.inputStream().use { it.copyTo(out) } }
-        Toast.makeText(ctx, "PDF enregistré dans Téléchargements : " + file.name, Toast.LENGTH_LONG).show()
-    }
-
-    private fun safely(ctx: Context, download: Boolean, build: () -> File) {
-        try {
-            val f = build()
-            if (download) saveToDownloads(ctx, f) else share(ctx, f)
-        } catch (e: Exception) {
-            Toast.makeText(ctx, "Export PDF impossible : " + e.message, Toast.LENGTH_LONG).show()
-        }
-    }
-
-    fun exportCv(ctx: Context, r: CvResponse, download: Boolean) = safely(ctx, download) { cvFile(ctx, r) }
-    fun exportLettre(ctx: Context, r: CvResponse, download: Boolean) = safely(ctx, download) { lettreFile(ctx, r) }
 }
